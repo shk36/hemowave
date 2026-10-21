@@ -145,53 +145,96 @@ The first derivative comes from a 5-point, second-order Savitzky–Golay filter,
 \dot{P}_{\mathrm{SG}}(t_n) = \frac{-2P_{n-2} - P_{n-1} + P_{n+1} + 2P_{n+2}}{10\,\Delta t}
 ```
 
-Each beat takes its maximum over the systolic upstroke, and the window takes the median over valid beats:
+Each beat $`i`$ takes its maximum over the systolic upstroke (pulse foot → systolic peak):
 
 ```math
-\left(\frac{dP}{dt}\right)_{\max,i} = \max_{t \,\in\, [t_{\mathrm{foot},i},\; t_{\mathrm{peak},i}]} \dot{P}_{\mathrm{SG}}(t),
-\qquad
-\left(\frac{dP}{dt}\right)_{\max} = \operatorname*{median}_{i\,:\,30 \,\le\, (dP/dt)_{\max,i} \,\le\, 5000} \left(\frac{dP}{dt}\right)_{\max,i}
+D_i = \max_{t_{\mathrm{foot},i} \,\le\, t \,\le\, t_{\mathrm{peak},i}} \dot{P}_{\mathrm{SG}}(t)
 ```
 
-Beat values outside 30–5,000 mmHg/s are excluded.
+Beat values outside 30–5,000 mmHg/s are excluded, and the window value is the median of the rest:
+
+```math
+\left(\frac{dP}{dt}\right)_{\max} = \mathrm{median}\,\big\{\, D_i \;:\; 30 \le D_i \le 5000\ \mathrm{mmHg/s} \,\big\}
+```
 
 ### 3 · Diastolic decay time constant (τ)
 
-Over 55–92 % of each beat's duration $`T_i`$ (pulse foot to next foot), with $`P_\infty`$ fixed 5 mmHg below the beat's minimum pressure, fit a log-linear regression:
+For each beat $`i`$ of duration $`T_i`$ (pulse foot to next foot), fix the asymptotic pressure 5 mmHg below the beat's minimum:
 
 ```math
-\ln\!\big(P(t) - P_{\infty,i}\big) = a_i + b_i\,t,
-\qquad
-t \in \big[\,t_{\mathrm{foot},i} + 0.55\,T_i,\;\; t_{\mathrm{foot},i} + 0.92\,T_i\,\big],
-\qquad
-P_{\infty,i} = \min_{\text{beat } i} P(t) - 5\ \text{mmHg}
+P_{\infty,i} = \min_{t \,\in\, \text{beat } i} P(t) - 5\ \mathrm{mmHg}
 ```
+
+and fit a log-linear regression over 55–92 % of the beat:
 
 ```math
-\tau_i = -\frac{1}{b_i},
+\ln\big(P(t) - P_{\infty,i}\big) = a_i + b_i\,t,
 \qquad
-\tau = \operatorname*{median}_{i\,:\,0.12 \,\le\, \tau_i \,\le\, 1.50\ \mathrm{s}} \tau_i
+t_{\mathrm{foot},i} + 0.55\,T_i \;\le\; t \;\le\; t_{\mathrm{foot},i} + 0.92\,T_i
 ```
 
-A beat is also skipped when the fit has fewer than 3 samples, any $`P(t) - P_\infty \le 0`$, or $`b_i \ge 0`$.
+The beat time constant is $`\tau_i = -1/b_i`$. Beat values outside 0.12–1.50 s are excluded, and the window value is the median of the rest:
+
+```math
+\tau = \mathrm{median}\,\big\{\, \tau_i \;:\; 0.12 \le \tau_i \le 1.50\ \mathrm{s} \,\big\}
+```
+
+A beat is also skipped when the fit has fewer than 3 samples, any $`P(t) - P_{\infty,i} \le 0`$, or $`b_i \ge 0`$.
 
 > [!NOTE]
 > dP/dt<sub>max</sub> and τ follow Ensarioğlu & Yıldırım (2026), **adapted** to 100 Hz, 10.24 s windows. The SG kernel is 5 points instead of 21 points at 500 Hz: both span 40 ms, but the kernels differ. Aggregation is over one window instead of one minute, and the beat detector is different. The τ range is applied per beat as an artifact filter rather than as a case-level flag. The docstrings in [`hemodynamics.py`](src/hemowave/hemodynamics.py) state every rule the reference leaves open.
 
 ### 4 · Waveform agreement
 
-| Metric | Definition | Range · best |
-|:--|:--|:--|
-| **MAE** | $`\frac{1}{N}\sum_n \lvert y_n - \hat{y}_n \rvert`$ | ≥ 0 mmHg · **0** |
-| **R²** | $`1 - \frac{\sum_n (y_n - \hat{y}_n)^2}{\sum_n (y_n - \bar{y})^2}`$ | ≤ 1 · **1** |
-| **PCC** | $`\frac{\sum_n (y_n - \bar{y})(\hat{y}_n - \bar{\hat{y}})}{\sqrt{\sum_n (y_n - \bar{y})^2}\,\sqrt{\sum_n (\hat{y}_n - \bar{\hat{y}})^2}}`$ | −1 … 1 · **1** |
-| **CCC** | $`\frac{2\,s_{y\hat{y}}}{s_y^2 + s_{\hat{y}}^2 + (\bar{y} - \bar{\hat{y}})^2}`$ | −1 … 1 · **1** |
-| **Cross-Corr** | $`\max_k \frac{\sum_n \tilde{y}_n\,\tilde{\hat{y}}_{n+k}}{\lVert \tilde{y} \rVert\,\lVert \tilde{\hat{y}} \rVert}`$ | −1 … 1 · **1** |
-| **NDTW** | $`\frac{\mathrm{DTW}(y,\,\hat{y})}{N\,(\max_n y_n - \min_n y_n)}`$ | ≥ 0 · **0** |
+Each metric compares a reference segment $`y`$ with an estimated segment $`\hat{y}`$ of the same length $`N`$.
 
-- **CCC** uses population (co)variances, $`s_{y\hat{y}} = \frac{1}{N}\sum_n (y_n - \bar{y})(\hat{y}_n - \bar{\hat{y}})`$. Unlike PCC it also penalises offset and scale errors.
-- **Cross-Corr** is the maximum normalized cross-correlation across all lags $`k`$, with $`\tilde{y}`$ and $`\tilde{\hat{y}}`$ the mean-centred signals. At $`k = 0`$ it equals PCC, so Cross-Corr − PCC shows how much a pure time shift would gain.
-- **NDTW** uses the FastDTW approximation (Salvador & Chan) with cost $`\lvert y_i - \hat{y}_j \rvert`$, normalized by segment length and the amplitude range of the reference.
+**MAE** — mean absolute error, in mmHg (best: 0)
+
+```math
+\mathrm{MAE} = \frac{1}{N} \sum_{n=1}^{N} \big|\, y_n - \hat{y}_n \,\big|
+```
+
+**R²** — coefficient of determination (best: 1, unbounded below)
+
+```math
+R^2 = 1 - \frac{\sum_{n} (y_n - \hat{y}_n)^2}{\sum_{n} (y_n - \bar{y})^2}
+```
+
+**PCC** — Pearson correlation; waveform shape only (−1 … 1, best: 1)
+
+```math
+\mathrm{PCC} = \frac{\sum_{n} (y_n - \bar{y})(\hat{y}_n - \bar{\hat{y}})}{\sqrt{\sum_{n} (y_n - \bar{y})^2}\;\sqrt{\sum_{n} (\hat{y}_n - \bar{\hat{y}})^2}}
+```
+
+**CCC** — Lin's concordance correlation; shape *and* level, so offset and scale errors are penalised (−1 … 1, best: 1)
+
+```math
+\mathrm{CCC} = \frac{2\, s_{y\hat{y}}}{s_y^2 + s_{\hat{y}}^2 + (\bar{y} - \bar{\hat{y}})^2},
+\qquad
+s_{y\hat{y}} = \frac{1}{N} \sum_{n} (y_n - \bar{y})(\hat{y}_n - \bar{\hat{y}})
+```
+
+with population variances $`s_y^2`$ and $`s_{\hat{y}}^2`$.
+
+**Cross-Corr** — maximum normalized cross-correlation across all lags $`k`$ (−1 … 1, best: 1)
+
+```math
+\text{Cross-Corr} = \max_{k} \frac{\sum_{n} \tilde{y}_n \, \tilde{\hat{y}}_{n+k}}{\lVert \tilde{y} \rVert \, \lVert \tilde{\hat{y}} \rVert},
+\qquad
+\tilde{y} = y - \bar{y}, \quad \tilde{\hat{y}} = \hat{y} - \bar{\hat{y}}
+```
+
+At $`k = 0`$ this equals PCC, so Cross-Corr − PCC shows how much a pure time shift would gain.
+
+**NDTW** — dynamic time warping distance, normalized by segment length and the reference amplitude range (best: 0)
+
+```math
+\mathrm{NDTW} = \frac{\mathrm{DTW}(y, \hat{y})}{N \cdot \big( \max_n y_n - \min_n y_n \big)},
+\qquad
+\mathrm{DTW}(y, \hat{y}) = \min_{\text{warping path } \pi} \sum_{(i,j) \in \pi} \big|\, y_i - \hat{y}_j \,\big|
+```
+
+DTW is computed with the FastDTW approximation (Salvador & Chan).
 
 ---
 
