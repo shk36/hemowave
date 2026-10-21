@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hemowave"
+dynamic = ["version"]
+description = "PPV, dP/dt_max, tau and waveform agreement metrics (MAE, R2, PCC, CCC, cross-correlation, NDTW) for arterial line (A-line) blood pressure waveforms"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [{ name = "Sangha Kim" }]
+keywords = ["arterial blood pressure", "arterial line", "waveform", "PPV", "dP/dt", "hemodynamics", "biosignal"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "pandas>=1.3",
+    "scikit-learn>=1.0",
+    "fastdtw>=0.3.4",
+]
+
+[project.optional-dependencies]
+progress = ["tqdm>=4.60"]
+dev = ["pytest>=7", "tqdm>=4.60"]
+
+[tool.hatch.version]
+path = "src/hemowave/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hemowave"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--doctest-modules src/hemowave tests"
